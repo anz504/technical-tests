@@ -41,60 +41,122 @@ Ahora bien, el reto contaba con cierta lógica para casos específicos donde : C
 
     function magic_inc(value, direction) {
     
-      Validación básica
-      // Si value es diferente a un valor númerico o igual a 0 entonces la función devuelve 0
+      // ============================================
+      // Step 1: Validación de <value>
+      // ============================================
+      // Si <value> no es un número o es igual a 0, entonces devolvemos 0
       if (typeof value !== 'number' || value === 0) {
         return 0;
       }
     
-      // Obtenemos el signo si es + o - 
+      // ============================================
+      // Step 2 : Preparación: Signo(+|-) y valor absoluto
+      // ============================================
+      //  Obtenemos el signo si es + o -
       const sign = Math.sign(value);
     
-      // Obtenemos el valor absoluto 
+      // Obtenemos el valor absoluto para simplificar
       let abs = Math.abs(value);
     
-      // Calculamos el orden de magnitud y como tenemos el valor absoluto no nos preocupamos por el negativo en estos momentos
-      // Ej:
-      // 0.5   → exp = -1
-      // 5     → exp = 0
-      // 50    → exp = 1
+      // ============================================
+      // Step 3 : Orden de magnitud
+      // ============================================
+      // Para calcular el exponente (orden de magnitud) usamos logaritmo base 10
+      // Ejemplos:
+      // 0.5   → exp = -1  (10^-1)
+      // 5     → exp = 0   (10^0)
+      // 50    → exp = 1   (10^1)
       const exp = Math.floor(Math.log10(abs));
     
-      // En base a 10 calculomos el "step" que realizara la función 
-      // Ej:
-      // abs = 0.5  → step = 0.1
-      // abs = 5    → step = 1
-      // abs = 50   → step = 10
-      const step = Math.pow(10, exp);
+      // Calculamos la magnitud base (el "step" principal)
+      // Esto es "clave" porque aqui definimos si al value incrementamos o decrementamos una unidad o décima
+      // Ejemplos:
+      // abs = 0.5  → magnitude = 0.1
+      // abs = 5    → magnitude = 1
+      // abs = 50   → magnitude = 10
+      const magnitude = Math.pow(10, exp);
     
-      // "Normalizamos" el valor al siguiente bucket válido
-      // Para generar una conversión en los valores « badly formatted »
-      // Ej:
-      // 12     → 20
-      // 0.76   → 0.8
-      // 1568   → 2000
-      const normalized = Math.ceil(abs / step) * step;
+      // ============================================
+      // Step 4 : Obtenemos el primer dígito significativo
+      // ============================================
+      // Obtenemos el primer dígito del número o en otras palabrar el número mas cercanos a redondear y para eso usamos Math.floor() para redondear hacia abajo.
+      // Ejemplos:
+      // 0.5  → firstDigit = 5
+      // 0.1  → firstDigit = 1
+      // 17   → firstDigit = 1
+      // 50   → firstDigit = 5
+      const firstDigit = Math.floor(abs / magnitude);
     
-      // Si el valor NO era canónico,
-      // la normalización ya cuenta como el incremento/decremento
-      if (normalized !== abs) {
-        return sign * normalized; // Aquí es donde nos sirve la variable "sign" que contiene el signo
-      }
+      // ============================================
+      // Step 5: Normalización del valor
+      // ============================================
+      // "Normalizamos" el valor al siguiente múltiplo válido de <magnitude>
+      // Esto convierte valores "badly formatted" a valores canónicos
+      // Ejemplos:
+      // 22     → 30    (siguiente múltiplo de 10)
+      // 0.76   → 0.8   (siguiente múltiplo de 0.1)
+      // 1568   → 2000  (siguiente múltiplo de 1000)
+      const normalized = Math.ceil(abs / magnitude) * magnitude;
     
-      // Si el valor ya es canónico,
-      // ahora sí aplicamos inc o dec real
+      // Calculamos cuántos decimales necesitamos para el redondeo correcto
+      const decimals = Math.max(0, -exp);
+    
+      // ============================================
+      // Step 6 : Incremento
+      // ============================================
       if (direction === 'inc') {
-        return sign * (abs + step);
+        // Si el valor NO estaba normalizado, la normalización ya cuenta como el incremento
+        // Ejemplo: 22 → 30 (no hace falta incrementar más)
+        if (Math.abs(normalized - abs) > magnitude * 0.0001) {
+          return sign * parseFloat(normalized.toFixed(decimals));
+        }
+        
+        // Si el valor ya era canónico, incrementamos con el step actual
+        // Ejemplo: 0.5 → 0.6, 10 → 20
+        const result = abs + magnitude;
+        return sign * parseFloat(result.toFixed(decimals));
       }
     
+      // ============================================
+      // Step 7 : Decremento
+      // ============================================
       if (direction === 'dec') {
-        const result = abs - step;
-    
-        // Nunca devolvemos valores <= 0
-        return result <= 0 ? 0 : sign * result;
+        // Si el valor NO estaba normalizado, primero normalizamos y luego decrementamos
+        // Ejemplo: 17 → 10 (normaliza) → queda listo para el siguiente paso
+        if (Math.abs(normalized - abs) > magnitude * 0.0001) {
+          const result = normalized - magnitude;
+          if (result <= 0) return 0;
+          return sign * parseFloat(result.toFixed(decimals));
+        }
+        
+        // ============================================
+        // CASO ESPECIAL: Primer dígito = 1
+        // ============================================
+        // Cuando el primer dígito es 1 y estamos decrementando,
+        // necesitamos usar un step más pequeño (un orden de magnitud menor) 
+        // * Justamente aquí fue donde me llevo mas tiempo darme cuenta del decremento, porque antes de este "arreglo" cuando era decremento usando 0.1 devolvía 0 porque tomaba el step = 0.1 
+        // Ejemplos:
+        // 0.1 → 0.09  (usa step = 0.01 en lugar de 0.1)
+        // 1   → 0.9   (usa step = 0.1 en lugar de 1)
+        // 10  → 9     (usa step = 1 en lugar de 10)
+        if (firstDigit === 1) {
+          const smallerStep = magnitude / 10;
+          const result = abs - smallerStep;
+          if (result <= 0) return 0;
+          return sign * parseFloat(result.toFixed(decimals + 1));
+        }
+        
+        // Caso normal: decrementamos con el step actual
+        // Ejemplo: 0.5 → 0.4, 50 → 40
+        const result = abs - magnitude;
+        if (result <= 0) return 0;
+        return sign * parseFloat(result.toFixed(decimals));
       }
     
-      // Cuando <direction> es un valor invalido devolvemos 0
+      // ============================================
+      // Valor por defecto
+      // ============================================
+      // Si direction no es 'inc' ni 'dec', devolvemos 0
       return 0;
     }
 
@@ -216,11 +278,6 @@ Dirección inválida
 ## Conclusiones finales
 
 El reto constaba de diferentes complicaciones y lógica a resolver, donde dependiendo el orden de la magnitud debía actuar la función. 
-
-
-
-
-
 
 
 
